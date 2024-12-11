@@ -151,6 +151,36 @@ class SequentialMse:
                                                            self.static_tensor_name_to_proto)
         self.quantizers_to_be_disabled = self._get_quantizers_to_be_disabled() # check this
 
+    def _update_value_info_for_output(self, node):
+        """
+        Updates the value info for output of a node in sim model.
+        Value info for QcQuantizeOp is not present in _sim_extractor
+
+        :param node: onnx node
+        """
+
+        input_name = node.input[0]
+        output_name = node.output[0]
+        if input_name in self._sim_extractor.vimap and output_name not in self._sim_extractor.vimap:
+            value_info_for_output = copy.deepcopy(self._sim_extractor.vimap[input_name])
+            value_info_for_output.name = node.output[0]
+            self._sim_extractor.vimap[node.output[0]] = value_info_for_output
+
+    def _update_value_info_for_input(self, node):
+        """
+        Updates the value info for input of a node in sim model.
+        Value info for QcQuantizeOp is not present in _sim_extractor
+
+        :param node: onnx node
+        """
+
+        input_name = node.input[0]
+        output_name = node.output[0]
+        if output_name in self._sim_extractor.vimap and input_name not in self._sim_extractor.vimap:
+            value_info_for_input = copy.deepcopy(self._sim_extractor.vimap[output_name])
+            value_info_for_input.name = node.input[0]
+            self._sim_extractor.vimap[node.input[0]] = value_info_for_input
+
     def _update_value_info(self):
         """
         Updates the value info for sim model.
@@ -159,11 +189,8 @@ class SequentialMse:
 
         for node in self.sim.model.nodes():
             if node.op_type == "QcQuantizeOp":
-                input_name = node.input[0]
-                if input_name in self._sim_extractor.vimap:
-                    value_info_for_output = copy.deepcopy(self._sim_extractor.vimap[input_name])
-                    value_info_for_output.name = node.output[0]
-                    self._sim_extractor.vimap[node.output[0]] = value_info_for_output
+                self._update_value_info_for_output(node)
+                self._update_value_info_for_input(node)
 
     def _fill_static_tensor_name_to_proto(self):
         """
@@ -501,6 +528,33 @@ class SequentialMse:
 
         return float_inputs, sim_inputs
 
+    def _get_input_and_output_names_for_sim(self, input_names, output_names):
+        """
+        Returns the input_name and output_name for sim model, input_name and
+        output_name can be different from float model
+
+        :param input_names: input names for float model
+        :param output_names: output names for float model
+        :return: modified input names and modified output names
+        """
+
+        model_output_names = [model_output.name for model_output in self.model.model.graph.output]
+        input_names_for_sim = list()
+        for input_name in input_names:
+            if input_name not in model_output_names:
+                input_names_for_sim.append(input_name)
+            else:
+                input_names_for_sim.append(input_name + '_updated')
+
+        output_names_for_sim = list()
+        for output_name in output_names:
+            if output_name not in model_output_names:
+                output_names_for_sim.append(output_name)
+            else:
+                output_names_for_sim.append(output_name + '_updated')
+
+        return input_names_for_sim, output_names_for_sim
+
     def _split_onnx_graph(self, input_names, output_names):
         """
         Splits the onnx graph from input names to output names using extractor
@@ -510,7 +564,8 @@ class SequentialMse:
         :return: float split model and sim split model
         """
         float_split_model = self._float_extractor.extract_model(list(input_names), list(output_names))
-        sim_split_model = self._sim_extractor.extract_model(list(input_names), list(output_names))
+        input_names_for_sim, output_names_for_sim = self._get_input_and_output_names_for_sim(input_names, output_names)
+        sim_split_model = self._sim_extractor.extract_model(list(input_names_for_sim), list(output_names_for_sim))
         return float_split_model, sim_split_model
 
     def _run_onnx_graph(self, model, inputs):
