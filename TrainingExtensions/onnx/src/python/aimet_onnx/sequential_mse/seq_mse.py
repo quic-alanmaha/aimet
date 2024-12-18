@@ -205,7 +205,8 @@ class SequentialMse:
             if node.op_type == "QcQuantizeOp":
                 self._update_value_info_for_output(node)
                 self._update_value_info_for_input(node)
-                self._update_value_info_for_graph_output()
+
+        self._update_value_info_for_graph_output()
 
     def _fill_static_tensor_name_to_proto(self):
         """
