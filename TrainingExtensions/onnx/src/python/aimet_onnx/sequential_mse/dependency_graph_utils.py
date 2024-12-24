@@ -74,9 +74,21 @@ class DependencyGraphUtils:
         self.static_tensor_name_to_proto = static_tensor_name_to_proto
         self.starting_ops = list()
         self.graph_outputs = [output.name for output in self.connected_graph.model.graph.output]
+        self.input_ops = list()
 
         self._fill_indegree()
+        self._fill_input_ops()
         self._init_name_to_dependent_on_supported_module()
+
+        print(self.input_ops)
+
+    def _fill_input_ops(self):
+
+        graph_inputs = [input_tensor.name for input_tensor in self.connected_graph.model.graph.input]
+
+        for node_name, input_names in self.node_name_to_input_names.items():
+            if any(input_name in graph_inputs for input_name in input_names):
+                self.input_ops.append(node_name)
 
     def _fill_indegree(self):
         """
@@ -139,7 +151,7 @@ class DependencyGraphUtils:
         for start_op in self.starting_ops:
             self._create_dependency_graph_helper(start_op, dependency_graph)
 
-        self._populate_data_for_starting_ops(dependency_graph, data_loader, num_batches)
+        # self._populate_data_for_starting_ops(dependency_graph, data_loader, num_batches)
 
         return dependency_graph
 
@@ -158,7 +170,7 @@ class DependencyGraphUtils:
 
         if src_op.model_module is not None:
             module = src_op.model_module.get_module()
-            if self.is_dependency_module(module) or src_op in self.connected_graph.starting_ops:
+            if self.is_dependency_module(module) or src_op in self.input_ops:
                 is_module_supported = True
                 op_name = src_op.name_op
                 op_type = src_op.type
