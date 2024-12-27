@@ -85,11 +85,16 @@ class DependencyGraphUtils:
         Fill the input op names dict with ops having at least one graph input
         """
 
-        graph_inputs = [input_tensor.name for input_tensor in self.connected_graph.model.graph.input]
+        graph_inputs = list()
+
+        for input_tensor in self.connected_graph.model.graph.input:
+            graph_inputs.append(input_tensor.name)
 
         for node_name, input_names in self.node_name_to_input_names.items():
-            if any(input_name in graph_inputs for input_name in input_names):
-                self.input_ops_name.append(node_name)
+            for input_name in input_names:
+                if input_name in graph_inputs:
+                    self.input_ops_name.append(node_name)
+                    break
 
     def _fill_indegree(self):
         """
