@@ -112,7 +112,6 @@ class SequentialMse:
         self.params = params
         self.node_name_to_input_names = dict()
         self.static_tensor_name_to_proto = dict()
-        self.idx = 0
 
         if not isinstance(self.model, ONNXModel):
             self.model = ONNXModel(self.model)
@@ -202,12 +201,12 @@ class SequentialMse:
         Value info for QcQuantizeOp is not present in _sim_extractor
         """
 
+        self._update_value_info_for_graph_output()
+
         for node in self.sim.model.nodes():
             if node.op_type == "QcQuantizeOp":
                 self._update_value_info_for_output(node)
                 self._update_value_info_for_input(node)
-
-        self._update_value_info_for_graph_output()
 
     def _fill_static_tensor_name_to_proto(self):
         """
@@ -487,30 +486,30 @@ class SequentialMse:
         else:
             raise ValueError(f"Invalid inp_symmetry: {self.params.inp_symmetry}")
 
-        # float_outputs = self._run_onnx_graph(float_split_model, float_inputs)
-        # float_outputs = np.concatenate(float_outputs[0], axis=0)
-        #
-        # for candidate in candidates:
-        #
-        #     self._compute_encoding_from_candidate(candidate, dependency_node)
-        #
-        #     sim_outputs = self._run_onnx_graph(sim_split_model, sim_inputs)
-        #     sim_outputs = np.concatenate(sim_outputs[0], axis=0)
-        #
-        #     loss = self._compute_recon_loss(sim_outputs, float_outputs, dependency_node)
-        #
-        #     total_loss.append(loss)
-        #
-        # stacked_loss = np.stack(total_loss, axis=0)
-        # arg_min_ = np.argmin(stacked_loss, axis=0, keepdims=True)
-        #
-        # best_max = torch.stack([torch.tensor(cand_max) for cand_max, _ in candidates]).gather(0, torch.tensor(arg_min_))[0]
-        # best_min = torch.stack([torch.tensor(cand_min) for _, cand_min in candidates]).gather(0, torch.tensor(arg_min_))[0]
-        #
-        # best_candidate = (best_max, best_min)
-        #
-        # self._compute_encoding_from_candidate(best_candidate, dependency_node)
-        # self._freeze_encodings(dependency_node)
+        float_outputs = self._run_onnx_graph(float_split_model, float_inputs)
+        float_outputs = np.concatenate(float_outputs[0], axis=0)
+
+        for candidate in candidates:
+
+            self._compute_encoding_from_candidate(candidate, dependency_node)
+
+            sim_outputs = self._run_onnx_graph(sim_split_model, sim_inputs)
+            sim_outputs = np.concatenate(sim_outputs[0], axis=0)
+
+            loss = self._compute_recon_loss(sim_outputs, float_outputs, dependency_node)
+
+            total_loss.append(loss)
+
+        stacked_loss = np.stack(total_loss, axis=0)
+        arg_min_ = np.argmin(stacked_loss, axis=0, keepdims=True)
+
+        best_max = torch.stack([torch.tensor(cand_max) for cand_max, _ in candidates]).gather(0, torch.tensor(arg_min_))[0]
+        best_min = torch.stack([torch.tensor(cand_min) for _, cand_min in candidates]).gather(0, torch.tensor(arg_min_))[0]
+
+        best_candidate = (best_max, best_min)
+
+        self._compute_encoding_from_candidate(best_candidate, dependency_node)
+        self._freeze_encodings(dependency_node)
 
     # pylint: disable=no-self-use
     def _get_input_names_from_dependencies(self, dependency_node: DependencyNode):
@@ -606,16 +605,11 @@ class SequentialMse:
         float_split_model, sim_split_model = self._split_onnx_graph(input_names=input_names, output_names=output_names)
         float_inputs, sim_inputs = self._get_inputs_from_dependencies(dependency_node=dependency_node)
 
-        import onnx
-        onnx.save(float_split_model, "/local/mnt/workspace/hpeswani/seq_mse/new_splitted_model/split_"+str(self.idx)+".onnx")
+        float_outputs = self._run_onnx_graph(model=float_split_model, inputs=float_inputs)
+        self.dependency_graph.update_float_data(output_names, float_outputs)
 
-        self.idx = self.idx + 1
-
-        # float_outputs = self._run_onnx_graph(model=float_split_model, inputs=float_inputs)
-        # self.dependency_graph.update_float_data(output_names, float_outputs)
-        #
-        # sim_outputs = self._run_onnx_graph(model=sim_split_model, inputs=sim_inputs)
-        # self.dependency_graph.update_sim_data(output_names, sim_outputs)
+        sim_outputs = self._run_onnx_graph(model=sim_split_model, inputs=sim_inputs)
+        self.dependency_graph.update_sim_data(output_names, sim_outputs)
 
         for inward_node in dependency_node.inward_nodes:
             inward_node.outdegree = inward_node.outdegree - 1
